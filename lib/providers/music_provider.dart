@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audio_service/audio_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song_model.dart';
+import '../services/audio_handler.dart';
 
 class MusicProvider extends ChangeNotifier {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioHandler _audioHandler;
 
   // Estado de reproducción
   bool _isPlaying = false;
@@ -48,25 +50,32 @@ class MusicProvider extends ChangeNotifier {
     ),
   ];
 
-  MusicProvider() {
+  MusicProvider(this._audioHandler) {
     _initAudioListeners();
+    _loadLastSong();
   }
 
   void _initAudioListeners() {
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      _isPlaying = state == PlayerState.playing;
+    _audioHandler.playbackState.listen((state) {
+      _isPlaying = state.playing;
       notifyListeners();
     });
 
-    _audioPlayer.onDurationChanged.listen((newDuration) {
-      _duration = newDuration;
-      notifyListeners();
+    _audioHandler.mediaItem.listen((item) {
+      if (item != null) {
+        _duration = item.duration ?? Duration.zero;
+        notifyListeners();
+      }
     });
 
-    _audioPlayer.onPositionChanged.listen((newPosition) {
-      _position = newPosition;
-      notifyListeners();
-    });
+    // Escuchar posición real del player (cast a AudioPlayerHandler para acceso directo si es necesario,
+    // o usar un stream custom si AudioService no expone posición continua eficientemente)
+    if (_audioHandler is AudioPlayerHandler) {
+      _audioHandler.player.onPositionChanged.listen((pos) {
+        _position = pos;
+        notifyListeners();
+      });
+    }
   }
 
   // Getters
@@ -79,18 +88,46 @@ class MusicProvider extends ChangeNotifier {
   List<Song> get playlist => _playlist;
   Color? get dominantColor => _dominantColor;
 
+  // Métodos de Persistencia
+  Future<void> _saveLastSong(String songId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_song_id', songId);
+  }
+
+  Future<void> _loadLastSong() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastSongId = prefs.getString('last_song_id');
+
+    if (lastSongId != null) {
+      try {
+        final song = _playlist.firstWhere((s) => s.id == lastSongId);
+        _currentSong = song;
+        _updatePalette(song.albumArt);
+        // No reproducimos automáticamente, solo cargamos el estado
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error loading last song: $e');
+      }
+    }
+  }
+
   // Métodos de Audio
   Future<void> playSong(Song song) async {
     if (_currentSong?.id != song.id) {
       _currentSong = song;
-      _updatePalette(song.albumArt); // Actualizar color
-      await _audioPlayer.stop();
+      _saveLastSong(song.id); // Guardar persistencia
+      _updatePalette(song.albumArt);
 
-      if (song.url.startsWith('http')) {
-        await _audioPlayer.play(UrlSource(song.url));
-      } else {
-        // Asumimos que es un archivo local
-        await _audioPlayer.play(DeviceFileSource(song.url));
+      final mediaItem = MediaItem(
+        id: song.id,
+        album: "Music Cast Album",
+        title: song.title,
+        artist: song.artist,
+        artUri: Uri.parse(song.albumArt),
+      );
+
+      if (_audioHandler is AudioPlayerHandler) {
+        await _audioHandler.playUrl(song.url, mediaItem);
       }
     } else {
       resume();
@@ -141,15 +178,15 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> pause() async {
-    await _audioPlayer.pause();
+    await _audioHandler.pause();
   }
 
   Future<void> resume() async {
-    await _audioPlayer.resume();
+    await _audioHandler.play();
   }
 
   Future<void> seek(Duration position) async {
-    await _audioPlayer.seek(position);
+    await _audioHandler.seek(position);
   }
 
   void next() {

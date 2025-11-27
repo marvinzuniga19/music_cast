@@ -1,19 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:audio_service/audio_service.dart';
 import 'providers/music_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/audio_handler.dart';
 
-void main() {
-  runApp(const MyApp());
+late AudioHandler _audioHandler;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  _audioHandler = await AudioService.init(
+    builder: () => AudioPlayerHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId:
+          'com.example.music_flutter_cast.channel.audio',
+      androidNotificationChannelName: 'Music Playback',
+      androidNotificationOngoing: true,
+    ),
+  );
+  runApp(MyApp(audioHandler: _audioHandler));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final AudioHandler audioHandler;
+
+  const MyApp({super.key, required this.audioHandler});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => MusicProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler)),
+      ],
       child: MaterialApp(
         title: 'Music Cast',
         debugShowCheckedModeBanner: false,

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../widgets/mini_player.dart';
 
+import '../widgets/song_search_delegate.dart';
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -12,7 +14,12 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Music Cast'),
         actions: [
-          IconButton(icon: const Icon(Icons.search), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              showSearch(context: context, delegate: SongSearchDelegate());
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.folder_open),
             onPressed: () => Provider.of<MusicProvider>(
