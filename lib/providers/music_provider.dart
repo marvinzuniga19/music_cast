@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../models/song_model.dart';
 
 class MusicProvider extends ChangeNotifier {
@@ -11,6 +12,9 @@ class MusicProvider extends ChangeNotifier {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   Song? _currentSong;
+
+  // Estado de UI
+  Color? _dominantColor;
 
   // Estado de Chromecast
   bool _isCasting = false;
@@ -73,11 +77,13 @@ class MusicProvider extends ChangeNotifier {
   Duration get position => _position;
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
+  Color? get dominantColor => _dominantColor;
 
   // Métodos de Audio
   Future<void> playSong(Song song) async {
     if (_currentSong?.id != song.id) {
       _currentSong = song;
+      _updatePalette(song.albumArt); // Actualizar color
       await _audioPlayer.stop();
 
       if (song.url.startsWith('http')) {
@@ -90,6 +96,24 @@ class MusicProvider extends ChangeNotifier {
       resume();
     }
     notifyListeners();
+  }
+
+  Future<void> _updatePalette(String imageUrl) async {
+    _dominantColor = null; // Reset temporal
+    notifyListeners();
+
+    try {
+      final PaletteGenerator generator =
+          await PaletteGenerator.fromImageProvider(
+            NetworkImage(imageUrl),
+            size: const Size(200, 200), // Optimización: usar imagen más pequeña
+          );
+      _dominantColor =
+          generator.dominantColor?.color ?? generator.mutedColor?.color;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error generating palette: $e');
+    }
   }
 
   Future<void> pickAndPlaySong() async {
