@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:file_picker/file_picker.dart';
@@ -5,6 +6,7 @@ import 'package:palette_generator/palette_generator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song_model.dart';
 import '../services/audio_handler.dart';
+import '../services/queue_manager.dart';
 
 class MusicProvider extends ChangeNotifier {
   final AudioHandler _audioHandler;
@@ -21,6 +23,12 @@ class MusicProvider extends ChangeNotifier {
   // Estado de Chromecast
   bool _isCasting = false;
   String? _connectedDeviceName;
+
+  // Estado de errores
+  String? _errorMessage;
+
+  // Queue Manager
+  final QueueManager _queueManager = QueueManager();
 
   // Lista de reproducción simulada
   final List<Song> _playlist = [
@@ -58,6 +66,7 @@ class MusicProvider extends ChangeNotifier {
   void _initAudioListeners() {
     _audioHandler.playbackState.listen((state) {
       _isPlaying = state.playing;
+      _position = state.updatePosition;
       notifyListeners();
     });
 
@@ -67,15 +76,6 @@ class MusicProvider extends ChangeNotifier {
         notifyListeners();
       }
     });
-
-    // Escuchar posición real del player (cast a AudioPlayerHandler para acceso directo si es necesario,
-    // o usar un stream custom si AudioService no expone posición continua eficientemente)
-    if (_audioHandler is AudioPlayerHandler) {
-      _audioHandler.player.onPositionChanged.listen((pos) {
-        _position = pos;
-        notifyListeners();
-      });
-    }
   }
 
   // Getters
@@ -87,6 +87,9 @@ class MusicProvider extends ChangeNotifier {
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
   Color? get dominantColor => _dominantColor;
+  String? get errorMessage => _errorMessage;
+  RepeatMode get repeatMode => _queueManager.repeatMode;
+  ShuffleMode get shuffleMode => _queueManager.shuffleMode;
 
   // Métodos de Persistencia
   Future<void> _saveLastSong(String songId) async {
@@ -94,7 +97,20 @@ class MusicProvider extends ChangeNotifier {
     await prefs.setString('last_song_id', songId);
   }
 
+  Future<void> _savePlaylist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final playlistJson = _playlist.map((song) => song.toJson()).toList();
+      await prefs.setString('playlist', jsonEncode(playlistJson));
+    } catch (e) {
+      debugPrint('Error saving playlist: $e');
+    }
+  }
+
   Future<void> _loadLastSong() async {
+    // Primero cargar la playlist guardada
+    await _loadPlaylist();
+
     final prefs = await SharedPreferences.getInstance();
     final lastSongId = prefs.getString('last_song_id');
 
@@ -111,28 +127,76 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadPlaylist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final playlistString = prefs.getString('playlist');
+
+      if (playlistString != null && playlistString.isNotEmpty) {
+        final List<dynamic> playlistJson = jsonDecode(playlistString);
+        _playlist.clear();
+        _playlist.addAll(
+          playlistJson.map((json) => Song.fromJson(json)).toList(),
+        );
+      }
+
+      // Inicializar queue manager con la playlist
+      if (_playlist.isNotEmpty) {
+        _queueManager.setQueue(_playlist);
+      }
+    } catch (e) {
+      debugPrint('Error loading playlist: $e');
+      // Si hay error, mantener la playlist por defecto
+      if (_playlist.isNotEmpty) {
+        _queueManager.setQueue(_playlist);
+      }
+    }
+  }
+
   // Métodos de Audio
   Future<void> playSong(Song song) async {
-    if (_currentSong?.id != song.id) {
-      _currentSong = song;
-      _saveLastSong(song.id); // Guardar persistencia
-      _updatePalette(song.albumArt);
-
-      final mediaItem = MediaItem(
-        id: song.id,
-        album: "Music Cast Album",
-        title: song.title,
-        artist: song.artist,
-        artUri: Uri.parse(song.albumArt),
-      );
-
-      if (_audioHandler is AudioPlayerHandler) {
-        await _audioHandler.playUrl(song.url, mediaItem);
+    try {
+      // Validar URL
+      if (!song.hasValidUrl) {
+        _showError('URL de canción inválida: ${song.title}');
+        return;
       }
-    } else {
-      resume();
+
+      if (_currentSong?.id != song.id) {
+        _currentSong = song;
+        await _saveLastSong(song.id); // Guardar persistencia
+        _updatePalette(song.albumArt);
+
+        final mediaItem = MediaItem(
+          id: song.id,
+          album: song.album ?? "Music Cast Album",
+          title: song.title,
+          artist: song.artist,
+          artUri: Uri.parse(song.albumArt),
+          duration: song.duration,
+        );
+
+        if (_audioHandler is AudioPlayerHandler) {
+          await _audioHandler.playUrl(song.url, mediaItem);
+        }
+      } else {
+        await resume();
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error playing song: $e');
+      _showError('No se pudo reproducir: ${song.title}');
     }
+  }
+
+  void _showError(String message) {
+    _errorMessage = message;
     notifyListeners();
+    // Limpiar error después de 5 segundos
+    Future.delayed(const Duration(seconds: 5), () {
+      _errorMessage = null;
+      notifyListeners();
+    });
   }
 
   Future<void> _updatePalette(String imageUrl) async {
@@ -154,26 +218,32 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> pickAndPlaySong() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-    );
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+      );
 
-    if (result != null) {
-      PlatformFile file = result.files.first;
-      if (file.path != null) {
-        final newSong = Song(
-          id: DateTime.now().toString(), // ID temporal único
-          title: file.name,
-          artist: 'Local File',
-          albumArt:
-              'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=500&q=80', // Placeholder
-          url: file.path!,
-        );
+      if (result != null) {
+        PlatformFile file = result.files.first;
+        if (file.path != null) {
+          final newSong = Song(
+            id: DateTime.now().toString(), // ID temporal único
+            title: file.name,
+            artist: 'Local File',
+            albumArt:
+                'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=500&q=80', // Placeholder
+            url: file.path!,
+          );
 
-        _playlist.add(newSong);
-        await playSong(newSong);
-        notifyListeners();
+          _playlist.add(newSong);
+          await _savePlaylist(); // Guardar playlist actualizada
+          await playSong(newSong);
+          notifyListeners();
+        }
       }
+    } catch (e) {
+      debugPrint('Error picking file: $e');
+      _showError('No se pudo abrir el archivo');
     }
   }
 
@@ -190,19 +260,28 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void next() {
-    if (_currentSong == null) return;
-    int currentIndex = _playlist.indexOf(_currentSong!);
-    if (currentIndex < _playlist.length - 1) {
-      playSong(_playlist[currentIndex + 1]);
+    final nextSong = _queueManager.getNext();
+    if (nextSong != null) {
+      playSong(nextSong);
     }
   }
 
   void previous() {
-    if (_currentSong == null) return;
-    int currentIndex = _playlist.indexOf(_currentSong!);
-    if (currentIndex > 0) {
-      playSong(_playlist[currentIndex - 1]);
+    final previousSong = _queueManager.getPrevious();
+    if (previousSong != null) {
+      playSong(previousSong);
     }
+  }
+
+  // Métodos de Queue Management
+  void toggleShuffle() {
+    _queueManager.toggleShuffle();
+    notifyListeners();
+  }
+
+  void toggleRepeat() {
+    _queueManager.toggleRepeat();
+    notifyListeners();
   }
 
   // Métodos de Chromecast

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/music_provider.dart';
 import '../widgets/cast_device_selector.dart';
+import '../services/queue_manager.dart';
 
 class PlayerScreen extends StatelessWidget {
   const PlayerScreen({super.key});
@@ -51,23 +52,35 @@ class PlayerScreen extends StatelessWidget {
               // Arte del Álbum
               Expanded(
                 child: Center(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 30,
-                          offset: const Offset(0, 15),
+                  child: GestureDetector(
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity! > 0) {
+                        provider.previous(); // Swipe derecha
+                      } else if (details.primaryVelocity! < 0) {
+                        provider.next(); // Swipe izquierda
+                      }
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 30,
+                            offset: const Offset(0, 15),
+                          ),
+                        ],
+                      ),
+                      child: Hero(
+                        tag: 'album-art-${song.id}',
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedNetworkImage(
+                            imageUrl: song.albumArt,
+                            fit: BoxFit.cover,
+                            width: MediaQuery.of(context).size.width * 0.8,
+                            height: MediaQuery.of(context).size.width * 0.8,
+                          ),
                         ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: song.albumArt,
-                        fit: BoxFit.cover,
-                        width: MediaQuery.of(context).size.width * 0.8,
-                        height: MediaQuery.of(context).size.width * 0.8,
                       ),
                     ),
                   ),
@@ -145,8 +158,13 @@ class PlayerScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.shuffle, color: Colors.white70),
-                    onPressed: () {},
+                    icon: Icon(
+                      Icons.shuffle,
+                      color: provider.shuffleMode == ShuffleMode.on
+                          ? Colors.blueAccent
+                          : Colors.white70,
+                    ),
+                    onPressed: () => provider.toggleShuffle(),
                   ),
                   IconButton(
                     icon: const Icon(Icons.replay_10),
@@ -194,8 +212,15 @@ class PlayerScreen extends StatelessWidget {
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.repeat, color: Colors.white70),
-                    onPressed: () {},
+                    icon: Icon(
+                      provider.repeatMode == RepeatMode.one
+                          ? Icons.repeat_one
+                          : Icons.repeat,
+                      color: provider.repeatMode != RepeatMode.off
+                          ? Colors.blueAccent
+                          : Colors.white70,
+                    ),
+                    onPressed: () => provider.toggleRepeat(),
                   ),
                 ],
               ),

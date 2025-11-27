@@ -3,6 +3,7 @@ import 'package:audioplayers/audioplayers.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   final _player = AudioPlayer();
+  Duration _currentPosition = Duration.zero;
 
   AudioPlayerHandler() {
     _player.onPlayerStateChanged.listen((state) {
@@ -17,6 +18,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     });
 
     _player.onPositionChanged.listen((position) {
+      _currentPosition = position;
       _broadcastState(_player.state);
     });
   }
@@ -43,7 +45,11 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
           PlayerState.completed: AudioProcessingState.completed,
         }[playerState]!,
         playing: playing,
-        updatePosition: Duration.zero,
+        updatePosition:
+            _player.state == PlayerState.playing ||
+                _player.state == PlayerState.paused
+            ? _currentPosition
+            : Duration.zero,
         bufferedPosition: Duration.zero,
         speed: 1.0,
         queueIndex: 0,

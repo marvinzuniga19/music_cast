@@ -33,38 +33,73 @@ class HomeScreen extends StatelessWidget {
       ),
       body: Consumer<MusicProvider>(
         builder: (context, provider, child) {
-          return ListView.builder(
-            itemCount: provider.playlist.length,
-            itemBuilder: (context, index) {
-              final song = provider.playlist[index];
-              final isPlaying = provider.currentSong?.id == song.id;
+          return Column(
+            children: [
+              // Mostrar mensaje de error si existe
+              if (provider.errorMessage != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.red.withValues(alpha: 0.2),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          provider.errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              // Lista de canciones
+              Expanded(
+                child: ListView.builder(
+                  itemCount: provider.playlist.length,
+                  itemBuilder: (context, index) {
+                    final song = provider.playlist[index];
+                    final isPlaying = provider.currentSong?.id == song.id;
 
-              return ListTile(
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.network(
-                    song.albumArt,
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        Container(width: 50, height: 50, color: Colors.grey),
-                  ),
+                    return ListTile(
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          song.albumArt,
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                                width: 50,
+                                height: 50,
+                                color: Colors.grey,
+                              ),
+                        ),
+                      ),
+                      title: Text(
+                        song.title,
+                        style: TextStyle(
+                          color: isPlaying ? Colors.blueAccent : Colors.white,
+                          fontWeight: isPlaying
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      subtitle: Text(song.artist),
+                      trailing: isPlaying
+                          ? const Icon(
+                              Icons.graphic_eq,
+                              color: Colors.blueAccent,
+                            )
+                          : null,
+                      onTap: () => provider.playSong(song),
+                    );
+                  },
                 ),
-                title: Text(
-                  song.title,
-                  style: TextStyle(
-                    color: isPlaying ? Colors.blueAccent : Colors.white,
-                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-                subtitle: Text(song.artist),
-                trailing: isPlaying
-                    ? const Icon(Icons.graphic_eq, color: Colors.blueAccent)
-                    : null,
-                onTap: () => provider.playSong(song),
-              );
-            },
+              ),
+            ],
           );
         },
       ),
