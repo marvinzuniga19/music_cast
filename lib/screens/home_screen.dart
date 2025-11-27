@@ -13,6 +13,14 @@ class HomeScreen extends StatelessWidget {
         title: const Text('Music Cast'),
         actions: [
           IconButton(icon: const Icon(Icons.search), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.folder_open),
+            onPressed: () => Provider.of<MusicProvider>(
+              context,
+              listen: false,
+            ).pickAndPlaySong(),
+            tooltip: 'Abrir archivo local',
+          ),
           IconButton(icon: const Icon(Icons.person), onPressed: () {}),
         ],
       ),

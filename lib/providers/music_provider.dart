@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/song_model.dart';
 
 class MusicProvider extends ChangeNotifier {
@@ -78,11 +79,41 @@ class MusicProvider extends ChangeNotifier {
     if (_currentSong?.id != song.id) {
       _currentSong = song;
       await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(song.url));
+
+      if (song.url.startsWith('http')) {
+        await _audioPlayer.play(UrlSource(song.url));
+      } else {
+        // Asumimos que es un archivo local
+        await _audioPlayer.play(DeviceFileSource(song.url));
+      }
     } else {
       resume();
     }
     notifyListeners();
+  }
+
+  Future<void> pickAndPlaySong() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+    );
+
+    if (result != null) {
+      PlatformFile file = result.files.first;
+      if (file.path != null) {
+        final newSong = Song(
+          id: DateTime.now().toString(), // ID temporal único
+          title: file.name,
+          artist: 'Local File',
+          albumArt:
+              'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=500&q=80', // Placeholder
+          url: file.path!,
+        );
+
+        _playlist.add(newSong);
+        await playSong(newSong);
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> pause() async {
