@@ -76,6 +76,30 @@ class MusicProvider extends ChangeNotifier {
         notifyListeners();
       }
     });
+
+    // Listen for song completion to auto-play next song
+    final handler = _audioHandler;
+    if (handler is AudioPlayerHandler) {
+      handler.onSongCompleted.listen((_) {
+        _handleSongCompletion();
+      });
+    }
+  }
+
+  /// Handles automatic playback when a song completes
+  void _handleSongCompletion() {
+    debugPrint('Song completed, checking for next song...');
+
+    // Get next song from queue manager based on repeat/shuffle settings
+    final nextSong = _queueManager.getNext();
+
+    if (nextSong != null) {
+      debugPrint('Auto-playing next song: ${nextSong.title}');
+      playSong(nextSong);
+    } else {
+      debugPrint('No next song available (end of queue, repeat off)');
+      // Optionally reset to beginning or show completion message
+    }
   }
 
   // Getters
@@ -166,6 +190,9 @@ class MusicProvider extends ChangeNotifier {
         _currentSong = song;
         await _saveLastSong(song.id); // Guardar persistencia
         _updatePalette(song.albumArt);
+
+        // Sync with queue manager so it knows the current song
+        _queueManager.jumpToSong(song.id);
 
         final mediaItem = MediaItem(
           id: song.id,

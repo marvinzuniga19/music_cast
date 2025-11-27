@@ -1,13 +1,23 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'dart:async';
 
 class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   final _player = AudioPlayer();
   Duration _currentPosition = Duration.zero;
 
+  // Stream controller for song completion events
+  final _songCompletedController = StreamController<void>.broadcast();
+  Stream<void> get onSongCompleted => _songCompletedController.stream;
+
   AudioPlayerHandler() {
     _player.onPlayerStateChanged.listen((state) {
       _broadcastState(state);
+
+      // Trigger auto-play when song completes
+      if (state == PlayerState.completed) {
+        _songCompletedController.add(null);
+      }
     });
 
     _player.onDurationChanged.listen((duration) {
@@ -80,4 +90,10 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   // Expose player for direct access if needed (though discouraged)
   AudioPlayer get player => _player;
+
+  /// Dispose resources when handler is no longer needed
+  void dispose() {
+    _songCompletedController.close();
+    _player.dispose();
+  }
 }
